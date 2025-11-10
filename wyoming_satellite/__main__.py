@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import logging
 import sys
+import json
 from functools import partial
 from pathlib import Path
 
@@ -125,6 +126,11 @@ async def main() -> None:
         nargs="+",
         metavar=("name", "pipeline"),
         help="Name of wake word to listen for and optional pipeline name to run (requires --wake-uri)",
+    )
+    parser.add_argument(
+        "--wake-word-pipelines",
+        help='JSON mapping of wake words to pipeline IDs (e.g., \'{"ok_nabu": "01ABC...", "hey_jarvis": "01DEF..."}\')',
+        default=None,
     )
     parser.add_argument("--wake-command", help="Program to run for wake word detection")
     parser.add_argument(
@@ -353,6 +359,16 @@ async def main() -> None:
         )
     )
 
+    # Parse wake word pipeline mappings if provided
+    wake_word_pipelines = None
+    if args.wake_word_pipelines:
+        try:
+            wake_word_pipelines = json.loads(args.wake_word_pipelines)
+            _LOGGER.info("Wake word pipeline mappings: %s", wake_word_pipelines)
+        except json.JSONDecodeError as e:
+            _LOGGER.error("Invalid JSON for --wake-word-pipelines: %s", e)
+            sys.exit(1)
+
     settings = SatelliteSettings(
         mic=MicSettings(
             uri=args.mic_uri,
@@ -381,6 +397,7 @@ async def main() -> None:
             names=[
                 WakeWordAndPipeline(*wake_name) for wake_name in args.wake_word_name
             ],
+            wake_word_pipelines=wake_word_pipelines,
             refractory_seconds=(
                 args.wake_refractory_seconds
                 if args.wake_refractory_seconds > 0

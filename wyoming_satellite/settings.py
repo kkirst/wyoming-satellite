@@ -3,7 +3,7 @@
 from abc import ABC
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Dict
 
 
 @dataclass(frozen=True)
@@ -118,6 +118,9 @@ class WakeSettings(ServiceSettings):
 
     names: Optional[List[WakeWordAndPipeline]] = None
     """List of wake word names to listen for."""
+
+    wake_word_pipelines: Optional[Dict[str, str]] = None
+    """List of pipelines, each mapped to a wake word."""
 
     rate: int = 16000
     """Sample rate of wake word audio (hertz)"""

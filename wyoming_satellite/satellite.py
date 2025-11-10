@@ -321,7 +321,7 @@ class SatelliteBase:
         if forward_event:
             await self.forward_event(event)
 
-    async def _send_run_pipeline(self, pipeline_name: Optional[str] = None) -> None:
+    async def _send_run_pipeline(self, pipeline_name: Optional[str] = None, wake_word_name: Optional[str] = None) -> None:
         """Sends a RunPipeline event with the correct stages."""
         if self.settings.wake.enabled:
             # Local wake word detection
@@ -349,6 +349,7 @@ class SatelliteBase:
                 width=self.settings.snd.width,
                 channels=self.settings.snd.channels,
             ),
+            wake_word_name=wake_word_name,
         ).event()
         _LOGGER.debug(run_pipeline)
         await self.event_to_server(run_pipeline)
@@ -1326,6 +1327,10 @@ class WakeStreamingSatellite(SatelliteBase):
 
         if Detection.is_type(event.type):
             detection = Detection.from_event(event)
+            detected_wake_word = detection.name
+
+            # Log which wake word was detected
+            _LOGGER.info("Detected wake word: %s", detected_wake_word)
 
             # Check refractory period to avoid multiple back-to-back detections
             refractory_timestamp = self.refractory_timestamp.get(detection.name)
@@ -1361,16 +1366,29 @@ class WakeStreamingSatellite(SatelliteBase):
             # Forward to the server
             await self.event_to_server(event)
 
-            # Match detected wake word name with pipeline name
+            # Determine which pipeline to use
             pipeline_name: Optional[str] = None
-            if self.settings.wake.names:
+
+            # First, try wake_word_pipelines mapping (new method)
+            if self.settings.wake.wake_word_pipelines:
+                # Strip version suffix if present (e.g., "ok_nabu_v0.1" -> "ok_nabu")
+                wake_word_base = detected_wake_word.split('_v')[0]
+                pipeline_name = self.settings.wake.wake_word_pipelines.get(wake_word_base)
+
+                if pipeline_name:
+                    _LOGGER.info("Routing to pipeline: %s", pipeline_name)
+                else:
+                    _LOGGER.warning("No pipeline mapping found for wake word: %s", detected_wake_word)
+
+            # Fall back to wake.names method (old method) if no mapping found
+            if pipeline_name is None and self.settings.wake.names:
                 detection_name = normalize_wake_word(detection.name)
                 for wake_name in self.settings.wake.names:
                     if normalize_wake_word(wake_name.name) == detection_name:
                         pipeline_name = wake_name.pipeline
                         break
 
-            await self._send_run_pipeline(pipeline_name=pipeline_name)
+            await self._send_run_pipeline(pipeline_name=pipeline_name, wake_word_name=detected_wake_word)
             await self.forward_event(event)  # forward to event service
             await self.trigger_detection(Detection.from_event(event))
             await self.trigger_streaming_start()
